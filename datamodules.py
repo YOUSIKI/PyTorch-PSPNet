@@ -50,6 +50,7 @@ class LightningCityscapes(LightningDataModule):
         def func(image, target):
             image = transforms.ToTensor()(image)
             target = np.array(target)
+            target[target == -1] = 0
             target = torch.tensor(target)
             target = target.unsqueeze(dim=0)
             concat = torch.cat((image, target), dim=0)

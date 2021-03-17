@@ -32,12 +32,14 @@ class LightningPSPNet(pl.LightningModule):
         return torch.argmax(self.pspnet(x), dim=1)
 
     def configure_optimizers(self):
-        self.log('learning_rate', self.hparams.lr, on_epoch=True)
-        return torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                               T_max=10)
+        return [optimizer], [scheduler]
 
     def criterion(self, output, target):
         target = target.squeeze()
-        return F.nll_loss(output, target)
+        return F.nll_loss(output, target, ignore_index=0)
 
     def accuracy(self, output, target):
         output = torch.argmax(output, dim=1)
@@ -140,7 +142,7 @@ if __name__ == '__main__':
 
     trainer = pl.Trainer(
         gpus=1,
-        max_epochs=5,
+        max_epochs=100,
         benchmark=True,
         check_val_every_n_epoch=1,
         auto_lr_find=True,
@@ -149,8 +151,5 @@ if __name__ == '__main__':
         # fast_dev_run=True,
     )
 
-    for i in range(1, 100 + 1):
-        pspnet.hparams.lr = 0.2**(i % 6 + 1)
-        trainer.fit(pspnet, datamodule=cityscapes)
-
+    trainer.fit(pspnet, datamodule=cityscapes)
     trainer.test(pspnet, datamodule=cityscapes)
