@@ -1,12 +1,14 @@
 import os
-from pytorch_lightning import callbacks
+import wandb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from random import randint
 from argparse import ArgumentParser
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
+from torchvision.transforms.functional import to_pil_image
 from models import PSPNet, Backbone
 from datamodules import LightningCityscapes
 
@@ -38,15 +40,35 @@ class LightningPSPNet(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def criterion(self, output, target):
-        target = target.squeeze()
+        target = target.squeeze(dim=1)
         return F.nll_loss(output, target, ignore_index=0)
 
     def accuracy(self, output, target):
         output = torch.argmax(output, dim=1)
-        target = target.squeeze()
+        target = target.squeeze(dim=1)
         acc = torch.sum(output == target)
         tot = target.size(0) * target.size(1) * target.size(2)
         return acc / tot
+
+    def create_image(self, x, y, y_hat):
+        y_hat = torch.argmax(y_hat, dim=0)
+        image = to_pil_image(x)
+        mask_data = y_hat.squeeze().cpu().detach().numpy()
+        gt_mask_data = y.squeeze().cpu().detach().numpy()
+        class_labels = LightningCityscapes.class_labels
+        return wandb.Image(
+            image,
+            masks={
+                "predictions": {
+                    "mask_data": mask_data,
+                    "class_labels": class_labels
+                },
+                "groud_truth": {
+                    "mask_data": gt_mask_data,
+                    "class_labels": class_labels
+                },
+            },
+        )
 
     def training_step(self, batch, *args, **kwargs):
         x, y = batch
@@ -76,6 +98,9 @@ class LightningPSPNet(pl.LightningModule):
                  prog_bar=False,
                  on_step=True,
                  on_epoch=True)
+        idx = randint(0, x.size(0) - 1)
+        wandb.log(
+            {'val_image': [self.create_image(x[idx], y[idx], y_hat[idx])]})
         return loss
 
     def test_step(self, batch, *args, **kwargs):
@@ -97,9 +122,7 @@ class LightningPSPNet(pl.LightningModule):
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    parser.add_argument('--ckpt', type=str, default=None)
-    args = parser.parse_args()
+    name = 'resnet34-psp512-coarse-dev1'
 
     cityscapes = LightningCityscapes(
         root='C:\\Users\\yousiki\\Documents\\Cityscapes',
@@ -111,19 +134,18 @@ if __name__ == '__main__':
 
     cityscapes.setup()
 
-    if args.ckpt:
-        pspnet = LightningPSPNet.load_from_checkpoint(args.ckpt)
-    else:
-        pspnet = LightningPSPNet(
-            n_classes=cityscapes.n_classes,
-            psp_size=512,
-            psp_bins=(1, 2, 3, 6),
-            backbone='resnet34',
-            lr=0.1,
-        )
+    pspnet = LightningPSPNet(
+        n_classes=cityscapes.n_classes,
+        psp_size=512,
+        psp_bins=(1, 2, 3, 6),
+        backbone='resnet34',
+        lr=0.1,
+    )
+
+    # pspnet = LightningPSPNet.load_from_checkpoint(args.ckpt)
 
     wandb_logger = WandbLogger(
-        name='coarse1',
+        name=name,
         project='PL-PSPNet',
         entity='yousiki',
     )
@@ -131,7 +153,7 @@ if __name__ == '__main__':
     wandb_logger.watch(pspnet.pspnet, log='all', log_freq=100)
 
     model_checkpoint = ModelCheckpoint(
-        dirpath=os.getcwd(),
+        dirpath=os.path.join(os.getcwd(), name + '_ckpt'),
         filename='{epoch}-{step}-{val_loss:.2f}',
         monitor='val_loss',
         mode='min',
@@ -146,10 +168,9 @@ if __name__ == '__main__':
         benchmark=True,
         check_val_every_n_epoch=1,
         auto_lr_find=True,
-        loggesr=[wandb_logger],
+        logger=wandb_logger,
         callbacks=[model_checkpoint],
         # fast_dev_run=True,
     )
 
     trainer.fit(pspnet, datamodule=cityscapes)
-    trainer.test(pspnet, datamodule=cityscapes)

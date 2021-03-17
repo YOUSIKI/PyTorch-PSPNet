@@ -31,20 +31,27 @@ class ComposeDataset(Dataset):
 
 
 class LightningCityscapes(LightningDataModule):
+    classes = datasets.Cityscapes.classes
+    n_classes = len(datasets.Cityscapes.classes)
+    class_labels = {
+        c.id: c.name
+        for c in datasets.Cityscapes.classes if c.id > 1
+    }
+
     def __init__(self,
                  root,
                  mode='coarse',
                  size=512,
                  batch_size=32,
-                 num_workers=8):
+                 num_workers=8,
+                 batch_size_fallback=1):
         super().__init__()
         self.root = root
         self.mode = mode
         self.size = size
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.classes = datasets.Cityscapes.classes
-        self.n_classes = len(self.classes)
+        self.batch_size_fallback = batch_size_fallback
 
     def get_transforms(self, train):
         def func(image, target):
@@ -59,7 +66,8 @@ class LightningCityscapes(LightningDataModule):
                 concat = transforms.RandomVerticalFlip()(concat)
                 concat = transforms.RandomHorizontalFlip()(concat)
             else:
-                concat = transforms.CenterCrop(self.size)(concat)
+                # concat = transforms.CenterCrop(self.size)(concat)
+                pass
             image, target = concat[:3, ...], concat[3:, ...]
             target = target.long()
             return image, target
@@ -91,13 +99,14 @@ class LightningCityscapes(LightningDataModule):
             target_type='semantic',
             transforms=self.get_transforms(train=False),
         )
-        self.ds_test = datasets.Cityscapes(
-            root=self.root,
-            split='test',
-            mode=self.mode,
-            target_type='semantic',
-            transforms=self.get_transforms(train=False),
-        )
+        if self.mode == 'fine':
+            self.ds_test = datasets.Cityscapes(
+                root=self.root,
+                split='test',
+                mode=self.mode,
+                target_type='semantic',
+                transforms=self.get_transforms(train=False),
+            )
 
     def train_dataloader(self):
         return DataLoaderX(
@@ -111,7 +120,7 @@ class LightningCityscapes(LightningDataModule):
     def val_dataloader(self):
         return DataLoaderX(
             self.ds_val,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size_fallback,
             num_workers=self.num_workers,
             shuffle=False,
             drop_last=False,
@@ -120,7 +129,7 @@ class LightningCityscapes(LightningDataModule):
     def test_dataloader(self):
         return DataLoaderX(
             self.ds_test,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size_fallback,
             num_workers=self.num_workers,
             shuffle=False,
             drop_last=False,
