@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -39,7 +37,7 @@ class PSPNet(nn.Module):
         x = self.ppmodule(x)
         x = self.classifier(x)
         x = F.interpolate(x, size=size, mode='bilinear', align_corners=True)
-        x = F.log_softmax(x)
+        x = F.log_softmax(x, dim=1)
         return x
 
 
