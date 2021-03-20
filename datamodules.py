@@ -41,7 +41,7 @@ class LightningCityscapes(LightningDataModule):
     def __init__(self,
                  root,
                  mode='coarse',
-                 size=512,
+                 size=(512, 512),
                  batch_size=32,
                  num_workers=8,
                  batch_size_fallback=1):
@@ -62,7 +62,7 @@ class LightningCityscapes(LightningDataModule):
             target = target.unsqueeze(dim=0)
             concat = torch.cat((image, target), dim=0)
             if train:
-                concat = transforms.RandomCrop((self.size, self.size))(concat)
+                concat = transforms.RandomCrop(self.size)(concat)
                 concat = transforms.RandomVerticalFlip()(concat)
                 concat = transforms.RandomHorizontalFlip()(concat)
             else:

@@ -35,8 +35,11 @@ class LightningPSPNet(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                               T_max=10)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            [40, 60, 80, 90],
+            gamma=0.2,
+        )
         return [optimizer], [scheduler]
 
     def criterion(self, output, target):
@@ -93,7 +96,7 @@ class LightningPSPNet(pl.LightningModule):
         loss = self.criterion(y_hat, y)
         accuracy = self.accuracy(y_hat, y)
         self.log('val_loss', loss, prog_bar=False, on_step=True, on_epoch=True)
-        self.log('val_accy',
+        self.log('val_acc',
                  accuracy,
                  prog_bar=False,
                  on_step=True,
@@ -122,13 +125,13 @@ class LightningPSPNet(pl.LightningModule):
 
 
 if __name__ == '__main__':
-    name = 'resnet34-psp512-coarse-dev1'
+    name = 'resnet34-psp512-fine-dev2'
 
     cityscapes = LightningCityscapes(
         root='C:\\Users\\yousiki\\Documents\\Cityscapes',
-        mode='coarse',
-        size=512,
-        batch_size=8,
+        mode='fine',
+        size=(512, 1024),
+        batch_size=4,
         num_workers=0,
     )
 
@@ -142,7 +145,8 @@ if __name__ == '__main__':
         lr=0.1,
     )
 
-    # pspnet = LightningPSPNet.load_from_checkpoint(args.ckpt)
+    pspnet = LightningPSPNet.load_from_checkpoint(
+        os.path.join(name + '_ckpt', 'last.ckpt'))
 
     wandb_logger = WandbLogger(
         name=name,
@@ -167,9 +171,10 @@ if __name__ == '__main__':
         max_epochs=100,
         benchmark=True,
         check_val_every_n_epoch=1,
-        auto_lr_find=True,
         logger=wandb_logger,
         callbacks=[model_checkpoint],
+        accumulate_grad_batches=4,
+        limit_val_batches=0.1,
         # fast_dev_run=True,
     )
 
